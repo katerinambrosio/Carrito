@@ -1,0 +1,414 @@
+***** codigo en arduino *******
+#include <Servo.h> 
+// SENSORES 
+const int SENSOR_IZQ=2,SENSOR_CEN=4,SENSOR_DER=7; 
+// SERVO 
+const int PIN_SERVO=9; 
+// RELÉ 
+const int PIN_RELE=8; 
+// L298N 
+const int IN1=3,IN2=10,IN3=11,IN4=12; 
+const int ENA=5,ENB=6; 
+// CONFIGURACIÓN 
+const int VEL_NORMAL=180,VEL_GIRO=150; 
+const int POS_CENTRO=90,POS_IZQ=130,POS_DER=50; 
+// VARIABLES 
+Servo servoManguera; 
+bool apagandoFuego=false; 
+// REGISTRO SERIAL 
+void registrarMovimiento(String movimiento){Serial.println(movimiento);} 
+// SETUP 
+void setup(){ 
+Serial.begin(9600); 
+pinMode(SENSOR_IZQ,INPUT); 
+pinMode(SENSOR_CEN,INPUT); 
+pinMode(SENSOR_DER,INPUT); 
+pinMode(PIN_RELE,OUTPUT); 
+digitalWrite(PIN_RELE,HIGH); 
+pinMode(IN1,OUTPUT); 
+pinMode(IN2,OUTPUT); 
+pinMode(IN3,OUTPUT); 
+pinMode(IN4,OUTPUT); 
+pinMode(ENA,OUTPUT); 
+pinMode(ENB,OUTPUT); 
+servoManguera.attach(PIN_SERVO); 
+servoManguera.write(POS_CENTRO); 
+pararMotores(); 
+delay(1000); 
+registrarMovimiento("SISTEMA_INICIADO"); 
+} 
+// LOOP 
+void loop(){ 
+revisarFuego(); 
+if(apagandoFuego)return; 
+while(Serial.available()>0){ 
+char cmd=Serial.read(); 
+Serial.print("CMD:"); 
+Serial.println(cmd); 
+procesarComando(cmd); 
+} 
+} 
+// REVISAR FUEGO 
+void revisarFuego(){ 
+bool fuegoIzq=digitalRead(SENSOR_IZQ)==LOW; 
+bool fuegoCen=digitalRead(SENSOR_CEN)==LOW; 
+bool fuegoDer=digitalRead(SENSOR_DER)==LOW; 
+if(!fuegoIzq&&!fuegoCen&&!fuegoDer){ 
+if(apagandoFuego){ 
+apagarBomba(); 
+servoSuave(POS_CENTRO); 
+apagandoFuego=false; 
+registrarMovimiento("FUEGO_APAGADO"); 
+} 
+return; 
+} 
+apagandoFuego=true; 
+pararMotores(); 
+encenderBomba(); 
+if(fuegoCen){ 
+servoSuave(POS_CENTRO); 
+registrarMovimiento("FUEGO_CENTRO"); 
+}else if(fuegoIzq){ 
+servoSuave(POS_IZQ); 
+registrarMovimiento("FUEGO_IZQUIERDA"); 
+}else if(fuegoDer){ 
+servoSuave(POS_DER); 
+registrarMovimiento("FUEGO_DERECHA"); 
+} 
+} 
+// COMANDOS 
+void procesarComando(char cmd){ 
+Serial.print("EJECUTANDO:"); 
+Serial.println(cmd); 
+switch(cmd){ 
+case 'F': moverAdelante(VEL_NORMAL); registrarMovimiento("ADELANTE"); break; 
+case 'B': moverAtras(VEL_NORMAL); registrarMovimiento("ATRAS"); break; 
+case 'L': girarIzquierda(VEL_GIRO); registrarMovimiento("IZQUIERDA"); break; 
+case 'R': girarDerecha(VEL_GIRO); registrarMovimiento("DERECHA"); break; 
+case 'S': pararMotores(); registrarMovimiento("STOP"); break; 
+case 'C': encenderBomba(); registrarMovimiento("BOMBA_ON"); break; 
+case 'X': apagarBomba(); registrarMovimiento("BOMBA_OFF"); break; 
+case 'P': 
+pararMotores(); 
+apagarBomba(); 
+servoSuave(POS_CENTRO); 
+apagandoFuego=false; 
+registrarMovimiento("EMERGENCIA"); 
+break; 
+} 
+} 
+// SERVO SUAVE 
+void servoSuave(int destino){ 
+int actual=servoManguera.read(); 
+if(actual<destino){ 
+for(int pos=actual;pos<=destino;pos++){ 
+servoManguera.write(pos); 
+delay(5); 
+} 
+}else{ 
+for(int pos=actual;pos>=destino;pos--){ 
+servoManguera.write(pos); 
+delay(5); 
+} 
+} 
+} 
+// MOTORES 
+void moverAdelante(int velocidad){ 
+analogWrite(ENA,velocidad); 
+analogWrite(ENB,velocidad); 
+digitalWrite(IN1,HIGH); 
+digitalWrite(IN2,LOW); 
+digitalWrite(IN3,HIGH); 
+digitalWrite(IN4,LOW); 
+} 
+void moverAtras(int velocidad){ 
+analogWrite(ENA,velocidad); 
+analogWrite(ENB,velocidad); 
+digitalWrite(IN1,LOW); 
+digitalWrite(IN2,HIGH); 
+digitalWrite(IN3,LOW); 
+digitalWrite(IN4,HIGH); 
+} 
+void girarDerecha(int velocidad){ 
+analogWrite(ENA,velocidad); 
+analogWrite(ENB,velocidad); 
+digitalWrite(IN1,HIGH); 
+digitalWrite(IN2,LOW); 
+digitalWrite(IN3,LOW); 
+digitalWrite(IN4,HIGH); 
+} 
+void girarIzquierda(int velocidad){ 
+analogWrite(ENA,velocidad); 
+analogWrite(ENB,velocidad); 
+digitalWrite(IN1,LOW); 
+digitalWrite(IN2,HIGH); 
+digitalWrite(IN3,HIGH); 
+digitalWrite(IN4,LOW); 
+} 
+void pararMotores(){ 
+analogWrite(ENA,0); 
+analogWrite(ENB,0); 
+digitalWrite(IN1,LOW); 
+digitalWrite(IN2,LOW); 
+digitalWrite(IN3,LOW); 
+digitalWrite(IN4,LOW); 
+} 
+// BOMBA 
+void encenderBomba(){digitalWrite(PIN_RELE,LOW);} 
+void apagarBomba(){digitalWrite(PIN_RELE,HIGH);} 
+***************************************************Anexo B - Código fuente PHP (control.php). *********************************
+<?php 
+$conn = new mysqli("localhost","root","","carrito_bombero"); 
+if(isset($_POST['cmd'])) { 
+$cmd = $_POST['cmd']; 
+$stmt = $conn->prepare("INSERT INTO comandos(comando,enviado) VALUES 
+(?,0)"); 
+$stmt->bind_param("s",$cmd); 
+$stmt->execute(); 
+echo "OK"; 
+exit; 
+} 
+?> 
+<!DOCTYPE html> 
+<html lang="es"> 
+<head> 
+<meta charset="UTF-8"> 
+<meta name="viewport" content="width=device-width, initial-scale=1.0"> 
+<title>Control Carrito Bombero | PS5 Style</title> 
+<style> 
+:root { 
+--bg: #0b0b12; --panel: #14141d; --btn: #1e1e28; --btn-hover: #282836; --accent: #0070f3; --glow: rgba(0, 112, 243, 0.45); --text: #f0f0f5; --text-dim: #8a8a9a; 
+} 
+* { box-sizing: border-box; } 
+body { 
+margin: 0; 
+min-height: 100vh; 
+background: radial-gradient(circle at 50% 20%, #1a1a2e 0%, var(--bg) 100%); 
+display: flex; 
+justify-content: center; 
+align-items: center; 
+font-family: 'Inter', system-ui, -apple-system, sans-serif; 
+color: var(--text); 
+padding: 20px; 
+overflow: hidden; 
+} 
+.gamepad { 
+background: linear-gradient(160deg, var(--panel), #0d0d14); 
+border-radius: 40px 40px 28px 28px / 36px 36px 44px 44px; 
+padding: 32px 24px 28px; 
+box-shadow: 
+0 30px 90px rgba(0,0,0,0.7), 
+inset 0 2px 6px rgba(255,255,255,0.04); 
+border: 1px solid rgba(255,255,255,0.06); 
+width: 100%; 
+max-width: 380px; 
+position: relative; 
+overflow: hidden; 
+} 
+/* Barra de luz estilo PS5 */ 
+.gamepad::before { 
+content: ''; 
+position: absolute; 
+top: 0; left: 15%; right: 15%; height: 3px; 
+background: linear-gradient(90deg, transparent 0%, var(--accent) 50%, 
+transparent 100%); 
+box-shadow: 0 0 18px var(--glow); 
+animation: pulse-light 3s infinite alternate; 
+} 
+@keyframes pulse-light { 
+0% { opacity: 0.5; } 
+100% { opacity: 1; } 
+} 
+.status-panel { 
+background: rgba(0,0,0,0.35); 
+border: 1px solid rgba(255,255,255,0.05); 
+border-radius: 16px; 
+padding: 16px; 
+margin-bottom: 28px; 
+text-align: center; 
+font-size: 14px; 
+letter-spacing: 0.5px; 
+color: var(--text-dim); 
+min-height: 52px; 
+display: flex; 
+align-items: center; 
+justify-content: center; 
+backdrop-filter: blur(4px); 
+} 
+.layout { 
+display: flex; 
+justify-content: space-between; 
+gap: 20px; 
+align-items: flex-start; 
+} 
+.section { 
+flex: 1; 
+display: flex; 
+flex-direction: column; 
+align-items: center; 
+gap: 14px; 
+} 
+/* D-PAD Izquierdo */ 
+.dpad { 
+display: grid; 
+grid-template-columns: repeat(3, 48px); 
+grid-template-rows: repeat(3, 48px); 
+gap: 6px; 
+} 
+.btn { 
+border: none; 
+cursor: pointer; 
+display: flex; 
+align-items: center; 
+justify-content: center; 
+transition: all 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94); 
+position: relative; 
+font-size: 18px; -webkit-tap-highlight-color: transparent; 
+user-select: none; 
+} 
+.btn.dir { 
+background: var(--btn); 
+border-radius: 10px; 
+color: var(--text); 
+box-shadow: 0 6px 14px rgba(0,0,0,0.4), inset 0 1px 2px rgba(255,255,255,0.08); 
+} 
+.btn.dir:hover { background: var(--btn-hover); transform: translateY(-2px); } 
+.btn.dir:active { transform: translateY(1px) scale(0.96); box-shadow: 0 2px 6px 
+rgba(0,0,0,0.5); background: var(--accent); color: #fff; } 
+.btn.dir.up    { grid-column: 2; grid-row: 1; border-radius: 14px 14px 8px 8px; } 
+.btn.dir.down  { grid-column: 2; grid-row: 3; border-radius: 8px 8px 14px 14px; } 
+.btn.dir.left  { grid-column: 1; grid-row: 2; border-radius: 14px 8px 8px 14px; } 
+.btn.dir.right { grid-column: 3; grid-row: 2; border-radius: 8px 14px 14px 8px; } 
+.btn.dir.stop { 
+grid-column: 2; grid-row: 2; 
+background: #2a2a35; 
+border-radius: 50%; 
+font-size: 20px; 
+box-shadow: inset 0 3px 6px rgba(0,0,0,0.6); 
+} 
+.btn.dir.stop:active 
+{ 
+rgba(255,71,87,0.6); } 
+background: 
+/* Botones de Acción Derechos */ 
+.face-btns { 
+display: grid; 
+grid-template-columns: repeat(2, 52px); 
+grid-template-rows: repeat(2, 52px); 
+gap: 14px; 
+} 
+.btn.action { 
+width: 52px; height: 52px; 
+#ff4757; 
+box-shadow: 0 0 15px 
+border-radius: 50%; 
+border: 2px solid rgba(255,255,255,0.08); 
+background: var(--btn); 
+color: #fff; 
+box-shadow: 0 6px 16px rgba(0,0,0,0.5), inset 0 1px 3px rgba(255,255,255,0.1); 
+font-size: 20px; 
+} 
+.btn.action:hover { transform: scale(1.08); box-shadow: 0 10px 24px rgba(0,0,0,0.6); 
+} 
+.btn.action:active { transform: scale(0.92); box-shadow: 0 2px 8px rgba(0,0,0,0.7); 
+filter: brightness(1.25); } 
+.btn.action.tri  { background: linear-gradient(135deg, #00b894, #00a381); } 
+.btn.action.circ { background: linear-gradient(135deg, #ff6b6b, #e03126); } 
+.btn.action.cross{ background: linear-gradient(135deg, #4834d4, #3628b5); } 
+.btn.action.sq   { background: linear-gradient(135deg, #feca57, #d4a017); } 
+.label { 
+font-size: 10px; 
+text-transform: uppercase; 
+letter-spacing: 2.5px; 
+color: var(--text-dim); 
+font-weight: 600; 
+margin-top: 6px; 
+} 
+.title { 
+text-align: center; 
+font-size: 20px; 
+font-weight: 700; 
+margin-bottom: 22px; 
+letter-spacing: 1px; 
+background: linear-gradient(90deg, #fff, #a0a0b0); -webkit-background-clip: text; -webkit-text-fill-color: transparent; 
+} 
+@media (max-width: 420px) { 
+.gamepad { padding: 26px 18px 22px; border-radius: 32px 32px 24px 24px / 30px 
+30px 36px 36px; } 
+.dpad { grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 
+44px); } 
+.face-btns { grid-template-columns: repeat(2, 48px); grid-template-rows: repeat(2, 
+48px); } 
+} 
+</style> 
+</head> 
+<body> 
+<div class="gamepad"> 
+  <div class="title">🚒 CONTROL CARRITO BOMBERO</div> 
+ 
+  <div class="status-panel" id="estado"> 
+    Esperando comandos... 
+  </div> 
+ 
+  <div class="layout"> 
+    <!-- IZQUIERDA: D-PAD Movimiento --> 
+    <div class="section"> 
+      <div class="dpad"> 
+        <button class="btn dir up" onclick="enviar('F')" aria
+label="Adelante">▲</button> 
+        <button class="btn dir left" onclick="enviar('L')" aria
+label="Izquierda">◀</button> 
+        <button class="btn dir stop" onclick="enviar('S')" aria
+label="Stop">⏹</button> 
+        <button class="btn dir right" onclick="enviar('R')" aria
+label="Derecha">▶</button> 
+        <button class="btn dir down" onclick="enviar('B')" aria
+label="Atrás">▼</button> 
+      </div> 
+      <span class="label">DIRECCIÓN</span> 
+    </div> 
+ 
+    <!-- DERECHA: Acciones --> 
+<div class="section"> 
+<div class="face-btns"> 
+<button class="btn action tri" onclick="enviar('C')" aria-label="Bomba 
+ON">💧</button> 
+<button 
+class="btn 
+action 
+label="Emergencia">🚨</button> 
+circ" 
+onclick="enviar('P')" 
+aria
+<button class="btn action cross" onclick="enviar('X')" aria-label="Bomba 
+OFF">🚫</button> 
+<button class="btn action sq" onclick="enviar('S')" aria-label="Stop 
+Secundario">⏹</button> 
+</div> 
+<span class="label">ACCIONES</span> 
+</div> 
+</div> 
+</div> 
+<script> 
+function enviar(cmd) { 
+const btn = event.currentTarget; 
+btn.style.transform = 'scale(0.92)'; 
+fetch("", { 
+method: "POST", 
+headers: { "Content-Type": "application/x-www-form-urlencoded" }, 
+body: "cmd=" + cmd 
+}) 
+.then(r => r.text()) 
+.then(() => { 
+document.getElementById("estado").innerHTML = "✅ Comando enviado: <b 
+style='color:#0070f3'>" + cmd + "</b>"; 
+setTimeout(() => btn.style.transform = '', 150); 
+}) 
+.catch(() => { 
+document.getElementById("estado").innerHTML = "⚠️ Error de conexión"; 
+btn.style.transform = ''; 
+}); 
+} 
+</script> 
+</body> 
+</html>
